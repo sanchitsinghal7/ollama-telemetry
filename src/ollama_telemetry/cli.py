@@ -1,10 +1,30 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 from .sqlite_sink import SQLiteSink
 
+
+
+def _parse_window(value: str) -> str:
+    """Parse a local SQLite lookback interval such as ``7`` or ``7d``.
+
+    Bare integers retain backwards compatibility and mean days. Supported units
+    are minutes (m), hours (h), days (d), and weeks (w).
+    """
+    text = str(value).strip().lower()
+    match = re.fullmatch(r"([1-9][0-9]*)([mhdw]?)", text)
+    if not match:
+        raise argparse.ArgumentTypeError(
+            "expected a positive interval such as 30m, 24h, 7d, 2w, or a whole number of days"
+        )
+    amount, unit = match.groups()
+    unit = unit or "d"
+    labels = {"m": "minutes", "h": "hours", "d": "days", "w": "days"}
+    multiplier = 7 if unit == "w" else 1
+    return f"-{int(amount) * multiplier} {labels[unit]}"
 
 def _sink_from_args(args: argparse.Namespace) -> SQLiteSink:
     return SQLiteSink(args.db)
@@ -38,7 +58,7 @@ def command_stats(args: argparse.Namespace) -> int:
                COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0)
         FROM telemetry_events
         WHERE occurred_at >= datetime('now', ?)
-    """, (f"-{args.last} days",))
+    """, (args.last,))
     _print_rows(["calls", "input_tokens", "output_tokens", "total_tokens", "seconds", "failures"], rows)
     return 0
 
@@ -50,7 +70,7 @@ def command_models(args: argparse.Namespace) -> int:
         FROM telemetry_events
         WHERE occurred_at >= datetime('now', ?)
         GROUP BY model ORDER BY COUNT(*) DESC
-    """, (f"-{args.last} days",))
+    """, (args.last,))
     _print_rows(["model", "calls", "tokens", "avg_ms"], rows)
     return 0
 
@@ -62,7 +82,7 @@ def command_agents(args: argparse.Namespace) -> int:
         FROM telemetry_events
         WHERE occurred_at >= datetime('now', ?)
         GROUP BY agent_name ORDER BY COUNT(*) DESC
-    """, (f"-{args.last} days",))
+    """, (args.last,))
     _print_rows(["agent", "calls", "tokens", "avg_ms"], rows)
     return 0
 
@@ -101,7 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, func in (("stats", command_stats), ("models", command_models), ("agents", command_agents)):
         item = sub.add_parser(name)
-        item.add_argument("--last", type=int, default=7, help="Days to include")
+        item.add_argument("--last", type=_parse_window, default="-7 days", help="Lookback interval: 7d (default), 24h, 30m, 2w, or a whole number of days")
         item.set_defaults(func=func)
 
     traces = sub.add_parser("traces")
