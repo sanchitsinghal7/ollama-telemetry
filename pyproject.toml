@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ollama-telemetry"
+version = "0.1.0"
+description = "Privacy-first, SQLite-first observability for local Ollama agents."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [{name = "Ollama Telemetry Contributors"}]
+keywords = ["ollama", "telemetry", "observability", "sqlite", "local-ai", "llm"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries",
+]
+dependencies = []
+
+[project.optional-dependencies]
+langchain = ["langchain-core>=0.2", "langchain-ollama>=0.2"]
+ollama = ["ollama>=0.3"]
+dev = ["pytest>=8", "build>=1.2", "twine>=5"]
+
+[project.scripts]
+ollama-telemetry = "ollama_telemetry.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/sanchitsinghal7/ollama-telemetry"
+Repository = "https://github.com/sanchitsinghal7/ollama-telemetry"
+Issues = "https://github.com/sanchitsinghal7/ollama-telemetry/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ollama_telemetry"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
