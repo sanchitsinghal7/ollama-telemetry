@@ -36,6 +36,8 @@ Auto instrumentation is opt-in and intentionally marked as a convenience mode. T
 
 ## Explicit tracing
 
+`telemetry.agent(...)` works as either a decorator or a context manager. Both forms create one root trace.
+
 ```python
 from ollama_telemetry import telemetry
 from ollama_telemetry.integrations.langchain import OllamaTelemetryCallback

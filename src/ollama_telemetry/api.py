@@ -16,6 +16,51 @@ logger = logging.getLogger("ollama_telemetry")
 F = TypeVar("F", bound=Callable[..., Any])
 
 
+class _AgentHandle:
+    """An agent trace usable as either a decorator or a context manager.
+
+    This makes both supported call styles explicit:
+
+    @telemetry.agent("worker")
+    def run(): ...
+
+    with telemetry.agent("worker"):
+        ...
+    """
+
+    def __init__(
+        self,
+        telemetry: "Telemetry",
+        name: str,
+        workflow: str | None,
+        metadata: dict[str, Any] | None,
+    ) -> None:
+        self._telemetry = telemetry
+        self._name = name
+        self._workflow = workflow
+        self._metadata = metadata
+        self._scope: Any | None = None
+
+    def __call__(self, func: F) -> F:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any):
+            with self._telemetry.agent_scope(
+                self._name, workflow=self._workflow, metadata=self._metadata
+            ):
+                return func(*args, **kwargs)
+        return wrapper  # type: ignore[return-value]
+
+    def __enter__(self) -> None:
+        self._scope = self._telemetry.agent_scope(
+            self._name, workflow=self._workflow, metadata=self._metadata
+        )
+        return self._scope.__enter__()
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool | None:
+        assert self._scope is not None
+        return self._scope.__exit__(exc_type, exc, traceback)
+
+
 class Telemetry:
     def __init__(self) -> None:
         self._sink: SQLiteSink | None = None
@@ -42,25 +87,19 @@ class Telemetry:
             # Never allow observability to fail the caller.
             logger.debug("Telemetry write failed", exc_info=True)
 
-    def agent(self, name: str, workflow: str | None = None, *, metadata: dict[str, Any] | None = None) -> Callable[[F], F]:
-        def decorator(func: F) -> F:
-            @functools.wraps(func)
-            def wrapper(*args: Any, **kwargs: Any):
-                root, token = start_root_context(agent_name=name, workflow=workflow, metadata=metadata)
-                started = time.perf_counter_ns()
-                self.emit(TelemetryEvent(event_type="agent_started", trace_id=root.trace_id, span_id=root.span_id, agent_name=name, workflow=workflow, status="running", metadata=root.metadata))
-                try:
-                    result = func(*args, **kwargs)
-                except Exception as exc:
-                    self.emit(TelemetryEvent(event_type="agent_failed", trace_id=root.trace_id, span_id=root.span_id, agent_name=name, workflow=workflow, status="error", duration_ms=(time.perf_counter_ns()-started)/1_000_000, error_type=type(exc).__name__, error_message=str(exc)[:512], metadata=root.metadata))
-                    raise
-                else:
-                    self.emit(TelemetryEvent(event_type="agent_completed", trace_id=root.trace_id, span_id=root.span_id, agent_name=name, workflow=workflow, status="success", duration_ms=(time.perf_counter_ns()-started)/1_000_000, metadata=root.metadata))
-                    return result
-                finally:
-                    reset_context(token)
-            return wrapper  # type: ignore[return-value]
-        return decorator
+    def agent(
+        self,
+        name: str,
+        workflow: str | None = None,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> _AgentHandle:
+        """Create a root agent trace.
+
+        The returned object supports both ``@telemetry.agent(...)`` and
+        ``with telemetry.agent(...):``.
+        """
+        return _AgentHandle(self, name, workflow, metadata)
 
     @contextmanager
     def agent_scope(self, name: str, workflow: str | None = None, *, metadata: dict[str, Any] | None = None) -> Iterator[None]:
